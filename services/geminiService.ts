@@ -27,16 +27,23 @@ Sarah's Persona: Professional scrubs, bright office. Visuals: [Sarah nods], [Sar
 Language:
 - Sarah's dialogue (sarahReaction and next question): ENGLISH ONLY.
 - Evaluation (strengths, areasForImprovement): KOREAN ONLY.
-- STAR Method: English model answer.
+- Score: Integer between 0 and 10 (e.g., 7, 8, 9). NEVER use decimals like 0.8.
+- Areas for Improvement: Must be specific, actionable, and detailed. Point out exactly what handled poorly (e.g., missing safety step, lack of empathy, vague terminology) and how to fix it.
+- Refined Answer (refinedAnswer): MUST provide the Model Answer in ENGLISH first (STAR Method), followed by its KOREAN translation.
 `;
 
 export const startInterview = async (province: Province, facility: FacilityType): Promise<any> => {
   const role = ROLE_MAP[province];
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Start the interview. Introduce yourself briefly and ask Question #1 clearly.`,
+    model: "gemini-2.0-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `Start the interview. Introduce yourself briefly and ask Question #1 clearly.` }],
+      }
+    ],
     config: {
-      systemInstruction: getSystemInstruction(province, role),
+      systemInstruction: { parts: [{ text: getSystemInstruction(province, role) }] },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -47,26 +54,29 @@ export const startInterview = async (province: Province, facility: FacilityType)
       },
     },
   });
-  
-  return JSON.parse(response.text.trim());
+
+  if (response.text) {
+    return JSON.parse(response.text.trim());
+  }
+  throw new Error("No response from AI");
 };
 
 export const evaluateResponse = async (
-  province: Province, 
-  userAnswer: string, 
+  province: Province,
+  userAnswer: string,
   history: { role: string, text: string }[],
   currentQuestionIndex: number,
   audioData?: { data: string, mimeType: string }
 ): Promise<Feedback> => {
   const role = ROLE_MAP[province];
   const chatHistory = history.map(h => `${h.role}: ${h.text}`).join('\n');
-  
-  const contents: any[] = [
+
+  const parts: any[] = [
     { text: `User's current response for Question ${currentQuestionIndex}: "${userAnswer}"\n\nTASK: Evaluate this answer. If audio is attached, use it to transcribe their answer. DO NOT ask a new question.` }
   ];
 
   if (audioData) {
-    contents.push({
+    parts.push({
       inlineData: {
         data: audioData.data,
         mimeType: audioData.mimeType
@@ -75,10 +85,15 @@ export const evaluateResponse = async (
   }
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: { parts: contents },
+    model: "gemini-2.0-flash",
+    contents: [
+      {
+        role: "user",
+        parts: parts
+      }
+    ],
     config: {
-      systemInstruction: getSystemInstruction(province, role),
+      systemInstruction: { parts: [{ text: getSystemInstruction(province, role) }] },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -96,7 +111,10 @@ export const evaluateResponse = async (
     },
   });
 
-  return JSON.parse(response.text.trim()) as Feedback;
+  if (response.text) {
+    return JSON.parse(response.text.trim()) as Feedback;
+  }
+  throw new Error("No response from AI");
 };
 
 export const getNextQuestion = async (
@@ -108,10 +126,15 @@ export const getNextQuestion = async (
   const chatHistory = history.map(h => `${h.role}: ${h.text}`).join('\n');
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Next Question Task: Provide Question #${nextIndex} of 20. History:\n${chatHistory}`,
+    model: "gemini-2.0-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `Next Question Task: Provide Question #${nextIndex} of 20. History:\n${chatHistory}` }]
+      }
+    ],
     config: {
-      systemInstruction: getSystemInstruction(province, role),
+      systemInstruction: { parts: [{ text: getSystemInstruction(province, role) }] },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -123,26 +146,45 @@ export const getNextQuestion = async (
     }
   });
 
-  return JSON.parse(response.text.trim()).question;
+  if (response.text) {
+    return JSON.parse(response.text.trim()).question;
+  }
+  throw new Error("No response from AI");
 };
 
 export const generateSarahSpeech = async (text: string): Promise<string> => {
   const dialogueOnly = text.replace(/\[.*?\]/g, '').trim();
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: dialogueOnly }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' },
+  if (!dialogueOnly) return "";
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: dialogueOnly }],
+        }
+      ],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
         },
       },
-    },
-  });
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!base64Audio) throw new Error("No audio data");
-  return base64Audio;
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      console.warn("TTS response had no audio data");
+      return "";
+    }
+    return base64Audio;
+  } catch (error) {
+    console.error("TTS Generation Error:", error);
+    return ""; // Fail gracefully without crashing the app
+  }
 };
 
 export function decodeBase64(base64: string): Uint8Array {

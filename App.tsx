@@ -16,14 +16,14 @@ const App: React.FC = () => {
     currentQuestionIndex: 0,
     totalQuestions: 20
   });
-  
+
   const [userInput, setUserInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [micPermission, setMicPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
-  
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -87,6 +87,7 @@ const App: React.FC = () => {
   };
 
   const playSarahVoice = async (base64: string) => {
+    if (!base64 || base64.trim() === '') return;
     try {
       const ctx = getAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
@@ -119,7 +120,7 @@ const App: React.FC = () => {
     try {
       const data = await startInterview(p, f);
       const audioBase64 = await generateSarahSpeech(data.sarahReaction);
-      
+
       setState({
         ...state,
         province: p,
@@ -129,7 +130,10 @@ const App: React.FC = () => {
         messages: [{ role: 'sarah', text: data.sarahReaction, audioBase64 }]
       });
       await playSarahVoice(audioBase64);
-    } catch (e) { alert("연결 오류가 발생했습니다."); } finally { setLoading(false); }
+    } catch (e: any) {
+      console.error(e);
+      alert(`연결 오류가 발생했습니다: ${e.message || JSON.stringify(e)}`);
+    } finally { setLoading(false); }
   };
 
   const handleSendAnswer = async (manualText?: string, audioBlob?: Blob) => {
@@ -138,14 +142,14 @@ const App: React.FC = () => {
     if (loading || (!initialText && !isVoice)) return;
 
     setLoading(true);
-    
+
     // 1. 사용자 메시지 즉시 추가 (음성인 경우 변환 대기 중 표시)
-    const userMsg: Message = { 
-      role: 'user', 
+    const userMsg: Message = {
+      role: 'user',
       text: isVoice ? "Transcribing your voice..." : initialText,
       isTranscribing: isVoice
     };
-    
+
     setState(prev => ({ ...prev, messages: [...prev.messages, userMsg] }));
     setUserInput('');
 
@@ -158,23 +162,23 @@ const App: React.FC = () => {
 
       // 히스토리 구성 (현재 전송 중인 메시지 포함)
       const currentHistory = [...state.messages, userMsg].map(m => ({ role: m.role, text: m.text }));
-      
+
       // 2. AI에게 평가 및 (필요시) 받아쓰기 요청
       const feedback = await evaluateResponse(
-        state.province!, 
-        initialText, 
-        currentHistory, 
-        state.currentQuestionIndex, 
+        state.province!,
+        initialText,
+        currentHistory,
+        state.currentQuestionIndex,
         audioData
       );
-      
+
       const audioBase64 = await generateSarahSpeech(feedback.sarahReaction);
-      const sarahFeedbackMsg: Message = { 
-        role: 'sarah', 
-        text: feedback.sarahReaction, 
-        expression: feedback.sarahReaction, 
-        feedback, 
-        audioBase64 
+      const sarahFeedbackMsg: Message = {
+        role: 'sarah',
+        text: feedback.sarahReaction,
+        expression: feedback.sarahReaction,
+        feedback,
+        audioBase64
       };
 
       // 3. 음성인 경우 사용자의 메시지를 실제 받아쓰기 텍스트로 교체하고 Sarah의 피드백 추가
@@ -191,10 +195,10 @@ const App: React.FC = () => {
             }
           }
           if (lastUserMsgIdx !== -1) {
-            updatedMessages[lastUserMsgIdx] = { 
-              ...updatedMessages[lastUserMsgIdx], 
+            updatedMessages[lastUserMsgIdx] = {
+              ...updatedMessages[lastUserMsgIdx],
               text: feedback.userTranscription,
-              isTranscribing: false 
+              isTranscribing: false
             };
           }
         }
@@ -206,9 +210,9 @@ const App: React.FC = () => {
       });
 
       await playSarahVoice(audioBase64);
-    } catch (e) { 
+    } catch (e) {
       console.error(e);
-      alert("답변 분석 중 오류가 발생했습니다. 다시 시도해주세요."); 
+      alert("답변 분석 중 오류가 발생했습니다. 다시 시도해주세요.");
       // 에러 발생 시 transcribing 상태 해제
       setState(prev => ({
         ...prev,
@@ -249,7 +253,7 @@ const App: React.FC = () => {
         micStreamRef.current = stream;
         setMicPermission('granted');
         audioChunksRef.current = [];
-        
+
         const mimeType = ['audio/webm', 'audio/mp4', 'audio/wav'].find(type => MediaRecorder.isTypeSupported(type)) || '';
         const mr = new MediaRecorder(stream, { mimeType });
         mediaRecorderRef.current = mr;
@@ -282,11 +286,11 @@ const App: React.FC = () => {
         {state.step !== 'setup' && (
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress</span>
-                <span className="text-xs font-black text-sky-600">{state.currentQuestionIndex} / {state.totalQuestions}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress</span>
+              <span className="text-xs font-black text-sky-600">{state.currentQuestionIndex} / {state.totalQuestions}</span>
             </div>
             <div className="w-48 h-2 bg-slate-200 rounded-full overflow-hidden">
-                <div className="h-full bg-sky-500 transition-all duration-500" style={{ width: `${(state.currentQuestionIndex / state.totalQuestions) * 100}%` }}></div>
+              <div className="h-full bg-sky-500 transition-all duration-500" style={{ width: `${(state.currentQuestionIndex / state.totalQuestions) * 100}%` }}></div>
             </div>
           </div>
         )}
@@ -299,7 +303,7 @@ const App: React.FC = () => {
           </div>
           <h2 className="text-2xl font-bold text-slate-800 mb-4">Start Your Comprehensive Interview</h2>
           <p className="text-slate-500 mb-8 text-sm leading-relaxed">준비된 20개의 핵심 질문을 통해 임상 능력, 의사소통, 상황 대응 능력을 평가받으세요. Sarah가 당신의 새로운 도전을 응원합니다.</p>
-          
+
           <div className="grid grid-cols-2 gap-3 mb-8">
             {PROVINCES.map(p => (
               <button key={p} onClick={() => setState({ ...state, province: p })} className={`p-4 rounded-xl border-2 text-left transition-all ${state.province === p ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-100' : 'border-slate-100 hover:border-slate-200'}`}>
@@ -318,13 +322,13 @@ const App: React.FC = () => {
           <aside className="lg:col-span-3 flex flex-col gap-4">
             <SarahAvatar expression={state.messages[state.messages.length - 1]?.expression} />
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase">Self Monitor</span>
-                    <button onClick={() => setShowCamera(!showCamera)} className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">{showCamera ? 'OFF' : 'ON'}</button>
-                </div>
-                <div className="aspect-video bg-slate-900 rounded-lg overflow-hidden relative">
-                    {showCamera ? <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover mirror" /> : <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-xs text-center p-2">Click 'ON' to see your camera</div>}
-                </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase">Self Monitor</span>
+                <button onClick={() => setShowCamera(!showCamera)} className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">{showCamera ? 'OFF' : 'ON'}</button>
+              </div>
+              <div className="aspect-video bg-slate-900 rounded-lg overflow-hidden relative">
+                {showCamera ? <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover mirror" /> : <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-xs text-center p-2">Click 'ON' to see your camera</div>}
+              </div>
             </div>
           </aside>
 
@@ -347,17 +351,17 @@ const App: React.FC = () => {
             <div className="p-6 bg-white border-t border-slate-100">
               {state.step === 'awaiting_next' ? (
                 <div className="flex flex-col items-center gap-4 animate-in slide-in-from-bottom-4">
-                    <p className="text-sm font-medium text-slate-500">피드백을 모두 확인하셨나요? 다음 질문을 받으려면 아래 버튼을 누르세요.</p>
-                    <button onClick={proceedToNextQuestion} disabled={loading} className="px-10 py-4 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 shadow-lg shadow-sky-100 transition-all flex items-center gap-3 active:scale-95">
-                        {loading ? 'Preparing...' : 'Next Question (다음 질문 받기)'}
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                    </button>
+                  <p className="text-sm font-medium text-slate-500">피드백을 모두 확인하셨나요? 다음 질문을 받으려면 아래 버튼을 누르세요.</p>
+                  <button onClick={proceedToNextQuestion} disabled={loading} className="px-10 py-4 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 shadow-lg shadow-sky-100 transition-all flex items-center gap-3 active:scale-95">
+                    {loading ? 'Preparing...' : 'Next Question (다음 질문 받기)'}
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                  </button>
                 </div>
               ) : state.step === 'finished' ? (
                 <div className="text-center p-4">
-                    <h3 className="text-xl font-bold text-slate-800 mb-2">Interview Complete!</h3>
-                    <p className="text-slate-500 mb-4">수고하셨습니다! 인터뷰의 모든 과정을 마치셨습니다. Sarah의 조언을 복기하며 성공적인 취업을 준비하세요.</p>
-                    <button onClick={() => window.location.reload()} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Restart (처음부터 다시 연습)</button>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Interview Complete!</h3>
+                  <p className="text-slate-500 mb-4">수고하셨습니다! 인터뷰의 모든 과정을 마치셨습니다. Sarah의 조언을 복기하며 성공적인 취업을 준비하세요.</p>
+                  <button onClick={() => window.location.reload()} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Restart (처음부터 다시 연습)</button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
@@ -365,10 +369,10 @@ const App: React.FC = () => {
                     <button onClick={toggleRecording} disabled={loading} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl group ${isRecording ? 'bg-red-500 animate-pulse scale-110' : micPermission === 'denied' ? 'bg-slate-200 cursor-not-allowed' : 'bg-sky-500 hover:bg-sky-600 shadow-sky-100'}`}>
                       {isRecording ? <div className="w-6 h-6 bg-white rounded-sm"></div> : <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>}
                     </button>
-                    {isRecording && <span className="text-2xl font-mono font-bold text-red-500">{Math.floor(recordingTime/60)}:{(recordingTime%60).toString().padStart(2,'0')}</span>}
+                    {isRecording && <span className="text-2xl font-mono font-bold text-red-500">{Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>}
                   </div>
                   <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">{micPermission === 'denied' ? 'Mic access denied. Please type your answer.' : isRecording ? 'Recording your answer...' : 'Click to Speak (음성 답변)'}</p>
-                  
+
                   <div className="flex gap-2 border-t pt-4">
                     <input type="text" value={userInput} onChange={e => setUserInput(e.target.value)} disabled={loading} onKeyDown={e => e.key === 'Enter' && handleSendAnswer()} placeholder={micPermission === 'denied' ? "Type your answer here..." : "Or type your response..."} className="flex-1 px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-sky-200 outline-none transition-all" />
                     <button onClick={() => handleSendAnswer()} disabled={loading || !userInput.trim()} className="px-6 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-colors">Submit</button>
