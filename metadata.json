@@ -1,0 +1,8 @@
+{
+  "name": "Sarah's Career Coach: Healthcare Interviewer",
+  "description": "An interactive AI-powered job interview simulator for CCAs, PSWs, and HCAs, featuring professional feedback in Korean and a realistic recruiter persona.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
